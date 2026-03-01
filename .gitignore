@@ -365,4 +365,7 @@ FodyWeavers.xsd
 CpmDemoApp/appsettings.Development.json
 CpmDemoApp/appsettings.json
 App/appsettings.json
+<<<<<<< HEAD
+=======
 App/appsettings.Development.json
+>>>>>>> 77dad49 (update gitignore)
