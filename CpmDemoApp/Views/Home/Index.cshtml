@@ -1,0 +1,54 @@
+﻿@{  
+    ViewBag.Title = "Home Page";  
+}  
+
+<script>
+    function loadPartialView() {
+            $.ajax({
+                url: "@Url.Action("MessagesList","Home")",
+                type: 'POST',
+                dataType: 'html',        
+                cache: false,
+                success: function (html) {
+                     $("#partialContainer").html(html); 
+                }
+            });
+        }
+    function RefreshPartial(){
+        //this will wait 1 seconds and then fire the load partial function
+        setTimeout(function(){
+            loadPartialView();
+            //recall this function so that it will continue to loop
+            RefreshPartial();
+        }, 1000);
+    }
+    //initialize the loop
+    RefreshPartial();
+</script>
+
+<h1>Contoso Electronics Customer Service Chat</h1>  
+  
+<br>
+
+<div>  
+    <strong>Chat History</strong>  
+</div>  
+
+<div style="border:dotted; height: 600px; overflow: auto">
+    <div id="partialContainer">
+        @Html.Partial("MessagesList")
+    </div>
+</div>
+
+<br>
+
+@using (Html.BeginForm("ClearHistory", "Home", FormMethod.Post))
+{
+    <input type="submit" value="Clear History" class="btn-secondary" />  
+}
+
+<script>
+    if ( window.history.replaceState ) {
+        window.history.replaceState( null, null, window.location.href );
+    }
+</script>

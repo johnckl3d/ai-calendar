@@ -1,0 +1,18 @@
+﻿@{
+    ViewData["Title"] = "Messages List";
+}
+
+<ul>
+    @if(Messages.MessagesListStatic!=null)
+    {
+        @foreach (var message in Messages.MessagesListStatic)
+        {
+            <li>
+                @if (message.Text != null)
+                {
+                    @message.Text
+                }
+            </li>
+        }
+    }
+</ul>
