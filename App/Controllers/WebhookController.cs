@@ -65,10 +65,10 @@ namespace viewer.Controllers
             TelemetryClient telemetryClient)
         {
             _telemetryClient = telemetryClient;
-            _telemetryClient.TrackTrace("WebhookController::Init");
+            _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init");
             if (!_clientsInitialized)
             {
-                _telemetryClient.TrackTrace("WebhookController::Init::client not initialized");
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::client not initialized");
                 _channelRegistrationId = Guid.Parse(notificationOptions.Value.ChannelRegistrationId);
                 _deploymentName = AIOptions.Value.DeploymentName;
                 _endpointURL = AIOptions.Value.Endpoint;
@@ -76,13 +76,14 @@ namespace viewer.Controllers
                 _tenantId = TenantOptions.Value.TenantId;
                 _clientId = TenantOptions.Value.ClientId;
                 _secret = TenantOptions.Value.Secret;
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::ConnectionString::" + notificationOptions.Value.ConnectionString);
                 _notificationMessagesClient = new NotificationMessagesClient(notificationOptions.Value.ConnectionString);
-                _telemetryClient.TrackTrace("WebhookController::Init::_deploymentName::" + _deploymentName);
-                _telemetryClient.TrackTrace("WebhookController::Init::_endpointURL::" + _endpointURL);
-                _telemetryClient.TrackTrace("WebhookController::Init::_agentId::" + _agentId);
-                _telemetryClient.TrackTrace("WebhookController::Init::_tenantId::" + _tenantId);
-                _telemetryClient.TrackTrace("WebhookController::Init::_clientId::" + _clientId);
-                _telemetryClient.TrackTrace("WebhookController::Init::_secret::" + _secret);
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_deploymentName::" + _deploymentName);
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_endpointURL::" + _endpointURL);
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_agentId::" + _agentId);
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_tenantId::" + _tenantId);
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_clientId::" + _clientId);
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_secret::" + _secret);
                 try
                 {
                     TokenCredential credential = BuildCredential();
@@ -93,7 +94,7 @@ namespace viewer.Controllers
                  
 
 
-                    _telemetryClient.TrackTrace("WebhookController::Init::_persistentAgentsClient created");
+                    _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_persistentAgentsClient created");
                     _thread = _persistentAgentsClient.Threads.CreateThread();
 
                     _clientsInitialized = true;
@@ -129,7 +130,7 @@ namespace viewer.Controllers
         {
             using (var reader = new StreamReader(Request.Body, Encoding.UTF8))
             {
-                _telemetryClient.TrackTrace("WebhookController::Post");
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController::Post");
                 var jsonContent = await reader.ReadToEndAsync();
 
                 // Check the event type.
@@ -140,7 +141,7 @@ namespace viewer.Controllers
                 }
                 else if (EventTypeNotification)
                 {
-                    _telemetryClient.TrackTrace("WebhookController::Post::EventTypeNotification");
+                    _telemetryClient.TrackTrace("CalendarApp:WebhookController::Post::EventTypeNotification");
                     return await HandleGridEvents(jsonContent);
                 }
 
@@ -161,8 +162,8 @@ namespace viewer.Controllers
 
         private async Task<IActionResult> HandleGridEvents(string jsonContent)
         {
-            _telemetryClient.TrackTrace("WebhookController::Handling Event Grid events for WhatsApp webhook.");
-            _telemetryClient.TrackTrace("WebhookController::HandleGridEvents::jsonContent::" + jsonContent);
+            _telemetryClient.TrackTrace("CalendarApp:WebhookController::Handling Event Grid events for WhatsApp webhook.");
+            _telemetryClient.TrackTrace("CalendarApp:WebhookController::HandleGridEvents::jsonContent::" + jsonContent);
             var eventGridEvents = JsonSerializer.Deserialize<EventGridEvent[]>(jsonContent, _jsonOptions);
 
             foreach (var eventGridEvent in eventGridEvents)
@@ -174,7 +175,7 @@ namespace viewer.Controllers
                     {
                         Text = $"Customer({messageData.From}): \"{messageData.Content}\""
                     });
-                    _telemetryClient.TrackTrace("WebhookController::HandleGridEvents::messageData.Content::" + messageData.Content);
+                    _telemetryClient.TrackTrace("CalendarApp:WebhookController:HandleGridEvents:messageData.Content::" + messageData.Content);
                     Messages.OpenAIConversationHistory.Add(new UserChatMessage(messageData.Content));
                     await RespondToCustomerAsync(messageData.From);
                 }
@@ -185,12 +186,12 @@ namespace viewer.Controllers
 
         private async Task RespondToCustomerAsync(string numberToRespondTo)
         {
-            _telemetryClient.TrackTrace("WebhookController::Respond to customer");
-            _telemetryClient.TrackTrace("WebhookController::numberToRespondTo::" + numberToRespondTo);
+            _telemetryClient.TrackTrace("CalendarApp:WebhookController:RespondToCustomerAsync:Respond to customer");
+            _telemetryClient.TrackTrace("CalendarApp:WebhookController:RespondToCustomerAsync:numberToRespondTo::" + numberToRespondTo);
             try
             {
                 var assistantResponseText = await GenerateAIResponseAsync();
-                _telemetryClient.TrackTrace("WebhookController::assistantResponseText::" + assistantResponseText);
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController:RespondToCustomerAsync:assistantResponseText::" + assistantResponseText);
                 if (string.IsNullOrWhiteSpace(assistantResponseText))
                 {
                     Messages.MessagesListStatic.Add(new Message
@@ -201,7 +202,7 @@ namespace viewer.Controllers
                 }
 
                 await SendWhatsAppMessageAsync(numberToRespondTo, assistantResponseText);
-                _telemetryClient.TrackTrace("WebhookController::assistantResponseText::after SendWhatsAppMessageAsync");
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController:RespondToCustomerAsync:assistantResponseText::after SendWhatsAppMessageAsync");
                 Messages.OpenAIConversationHistory.Add(new AssistantChatMessage(assistantResponseText));
                 Messages.MessagesListStatic.Add(new Message
                 {
@@ -219,7 +220,7 @@ namespace viewer.Controllers
 
                 Messages.MessagesListStatic.Add(new Message
                 {
-                    Text = $"Error: Failed to respond to \"{numberToRespondTo}\". Exception: {e.Message}"
+                    Text = $"CalendarApp:WebhookController:RespondToCustomerAsync:Error: Failed to respond to \"{numberToRespondTo}\". Exception: {e.Message}"
                 });
             }
         }
@@ -229,24 +230,24 @@ namespace viewer.Controllers
         {
             try
             {
-                _telemetryClient.TrackTrace("WebhookController::GenerateAIResponseAsync");
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync");
 
                 var chatMessages = new List<ChatMessage> { new SystemChatMessage(SystemPrompt) };
                 chatMessages.AddRange(Messages.OpenAIConversationHistory);
                 string chatMessagesJson = JsonSerializer.Serialize(chatMessages);
-                _telemetryClient.TrackTrace("WebhookController::GenerateAIResponseAsync::chatMessages::" + chatMessagesJson);
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:chatMessages::" + chatMessagesJson);
 
                 var lastUserMessage = Messages.OpenAIConversationHistory
                     .LastOrDefault(m => m is UserChatMessage) as UserChatMessage;
 
                 if (lastUserMessage == null || lastUserMessage.Content.Count == 0)
                 {
-                    _telemetryClient.TrackTrace("WebhookController::GenerateAIResponseAsync::No user message found");
+                    _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:No user message found");
                     return "I did not receive any question to answer.";
                 }
 
                 string input = lastUserMessage.Content[0].Text;
-                _telemetryClient.TrackTrace("WebhookController::GenerateAIResponseAsync::lastUserMessage::" + input);
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:lastUserMessage::" + input);
 
                 // Send message to the thread
                 PersistentThreadMessage messageResponse = _persistentAgentsClient.Messages.CreateMessage(
@@ -307,12 +308,12 @@ namespace viewer.Controllers
                 }
 
                 var result = sb.ToString().Trim();
-                _telemetryClient.TrackTrace("WebhookController::GenerateAIResponseAsync::finalResponse::" + result);
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:finalResponse::" + result);
                 return string.IsNullOrEmpty(result) ? "no response" : result;
             }
             catch (Exception ex)
             {
-                _telemetryClient.TrackTrace("WebhookController::GenerateAIResponseAsync::error::" + ex.Message);
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:error::" + ex.Message);
                 _telemetryClient.TrackException(ex, new Dictionary<string, string?>
                 {
                     ["Operation"] = "GenerateAIResponseAsync"
