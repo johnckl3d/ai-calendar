@@ -14,21 +14,8 @@ using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
 using OpenAI.Responses;
-
-
-
-//using OpenAI.Responses;
 using System.Text;
 using System.Text.Json;
-
-// using Azure.AI.Projects;
-// using OpenAI;
-// using Microsoft.Extensions.Logging;
-// using System.ClientModel;
-// using System.Collections.Concurrent;
-// using System.Diagnostics.Eventing.Reader;
-// using System.Net.Http.Json;
-// using System.Reflection;
 
 #pragma warning disable OPENAI001
 namespace viewer.Controllers
@@ -48,9 +35,9 @@ namespace viewer.Controllers
         private static string _tenantId;
         private static string _clientId;
         private static string _secret;
+        private static string _key;
         private static PersistentAgentThread _thread;
         private static AIProjectClient _projectClient;
-        private static ProjectOpenAIClient _openAiClient;
         private readonly TelemetryClient _telemetryClient;
 
 
@@ -80,6 +67,8 @@ namespace viewer.Controllers
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::client not initialized");
                 _channelRegistrationId = Guid.Parse(notificationOptions.Value.ChannelRegistrationId);
                 _deploymentName = AIOptions.Value.DeploymentName;
+
+                _key = AIOptions.Value.Key;
                 _endpointURL = AIOptions.Value.Endpoint;
                 _agentId = AIOptions.Value.AgentId;
                 _tenantId = TenantOptions.Value.TenantId;
@@ -103,7 +92,6 @@ namespace viewer.Controllers
                     _projectClient = new AIProjectClient(
                         endpoint: new Uri(_endpointURL),
                         tokenProvider: credential);
-                    _openAiClient = _projectClient.OpenAI;
 
                     _clientsInitialized = true;
                 }
@@ -185,20 +173,20 @@ namespace viewer.Controllers
                     });
                     _telemetryClient.TrackTrace("CalendarApp:WebhookController:HandleGridEvents:messageData.Content::" + messageData.Content);
                     //Messages.OpenAIConversationHistory.Add(new UserChatMessage(messageData.Content));
-                    await RespondToCustomerAsync(messageData.From);
+                    await RespondToCustomerAsync(messageData.From, messageData.Content);
                 }
             }
 
             return Ok();
         }
 
-        private async Task RespondToCustomerAsync(string numberToRespondTo)
+        private async Task RespondToCustomerAsync(string numberToRespondTo, string customerMessage)
         {
-            _telemetryClient.TrackTrace("CalendarApp:WebhookController:RespondToCustomerAsync:Respond to customer");
+            _telemetryClient.TrackTrace("CalendarApp:WebhookController:RespondToCustomerAsync");
             _telemetryClient.TrackTrace("CalendarApp:WebhookController:RespondToCustomerAsync:numberToRespondTo::" + numberToRespondTo);
             try
             {
-                var assistantResponseText = await GenerateAIResponseAsync();
+                var assistantResponseText = await GenerateAIResponseAsync(customerMessage);
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController:RespondToCustomerAsync:assistantResponseText::" + assistantResponseText);
                 if (string.IsNullOrWhiteSpace(assistantResponseText))
                 {
@@ -234,132 +222,23 @@ namespace viewer.Controllers
         }
 
 
-        private async Task<string?> GenerateAIResponseAsync()
+        private async Task<string?> GenerateAIResponseAsync(string customerMessage)
         {
             try
             {
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync");
-
-                //// Create an empty conversation (or set options if you need to)
-                //var createResult = _openAiClient.Conversations.CreateProjectConversation();
-                //_telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::createResult::");
-                ////ProjectConversation conversation = createResult;
-                //_telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::conversation::");
-                //string conversationId = conversation.Id;
-                //_telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::conversation::" + conversationId);
-
-                //string model = _deploymentName;
-
-                //ProjectResponsesClient responseClient = _projectClient.OpenAI.GetProjectResponsesClientForModel(_deploymentName);
-
-                var chatMessages = new List<ChatMessage> { new SystemChatMessage(SystemPrompt) };
-                chatMessages.AddRange(Messages.OpenAIConversationHistory);
-                string chatMessagesJson = JsonSerializer.Serialize(chatMessages);
-                _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:chatMessages::" + chatMessagesJson);
-
-                var lastUserMessage = Messages.OpenAIConversationHistory
-                    .LastOrDefault(m => m is UserChatMessage) as UserChatMessage;
-
-                if (lastUserMessage == null || lastUserMessage.Content.Count == 0)
-                {
-                    _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:No user message found");
-                    return "I did not receive any question to answer.";
-                }
-
-                string input = lastUserMessage.Content[0].Text;
-
-                AIProjectClient projectClient = new(endpoint: new Uri(_endpointURL), tokenProvider: new DefaultAzureCredential());
+                TokenCredential credential = BuildCredential();
+                AIProjectClient projectClient = new(endpoint: new Uri(_endpointURL), tokenProvider: credential);
                 ProjectConversation conversation = projectClient.OpenAI.Conversations.CreateProjectConversation();
                 AgentReference agentReference = new AgentReference(name: _agentId, version: _agentVersion);
                 ProjectResponsesClient responseClient = projectClient.OpenAI.GetProjectResponsesClientForAgent(agentReference, conversation.Id);
-
-                ResponseResult response = responseClient.CreateResponse(input);
-
-
-               
-
-                //await foreach (StreamingResponseUpdate streamResponse in responseClient.CreateResponseStreamingAsync(input))
-                //{
-                //    if (streamResponse is StreamingResponseCreatedUpdate createUpdate)
-                //    {
-                //        _telemetryClient.TrackTrace($"Stream response created with ID: {createUpdate.Response.Id}");
-                //    }
-                //    else if (streamResponse is StreamingResponseOutputTextDeltaUpdate textDelta)
-                //    {
-                //        _telemetryClient.TrackTrace($"Delta: {textDelta.Delta}");
-                //    }
-                //    else if (streamResponse is StreamingResponseOutputTextDoneUpdate textDoneUpdate)
-                //    {
-                //        _telemetryClient.TrackTrace($"Response done with full message: {textDoneUpdate.Text}");
-                //        return string.IsNullOrEmpty(textDoneUpdate.Text) ? "no response" : textDoneUpdate.Text;
-                //    }
-                //    else if (streamResponse is StreamingResponseErrorUpdate errorUpdate)
-                //    {
-                //        _telemetryClient.TrackTrace($"The stream has failed with the error: {errorUpdate.Message}");
-                //    }
-                //}
-                //_openAiClient.Conversations.DeleteConversation(conversationId);
-
-                //    var chatMessages = new List<ChatMessage> { new SystemChatMessage(SystemPrompt) };
-                //    chatMessages.AddRange(Messages.OpenAIConversationHistory);
-                //    string chatMessagesJson = JsonSerializer.Serialize(chatMessages);
-                //    _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:chatMessages::" + chatMessagesJson);
-
-                //    var lastUserMessage = Messages.OpenAIConversationHistory
-                //        .LastOrDefault(m => m is UserChatMessage) as UserChatMessage;
-
-                //    if (lastUserMessage == null || lastUserMessage.Content.Count == 0)
-                //    {
-                //        _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:No user message found");
-                //        return "I did not receive any question to answer.";
-                //    }
-
-                //    string input = lastUserMessage.Content[0].Text;
-                //    _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:lastUserMessage::" + input);
-
-                //    // Send message to the thread
-                //    PersistentThreadMessage messageResponse = _persistentAgentsClient.Messages.CreateMessage(
-                //        _thread.Id,
-                //        MessageRole.User,
-                //        input);
-
-                //    // Start a run
-                //    ThreadRun run = _persistentAgentsClient.Runs.CreateRun(
-                //        _thread.Id,
-                //        _agent.Id);
-
-                //    // Wait for completion
-                //    do
-                //    {
-                //        await Task.Delay(TimeSpan.FromMilliseconds(500));
-                //        run = _persistentAgentsClient.Runs.GetRun(_thread.Id, run.Id);
-                //    }
-                //    while (run.Status == RunStatus.Queued
-                //        || run.Status == RunStatus.InProgress);
-
-                //    if (run.Status != RunStatus.Completed)
-                //    {
-                //        throw new InvalidOperationException($"Run failed or was canceled: {run.LastError?.Message}");
-                //    }
-
-                //    // Read all messages in ascending order and take the LAST assistant message
-                //    PersistentThreadMessage? lastAssistantMessage = null;
-
-                //    foreach (var m in _persistentAgentsClient.Messages.GetMessages(_thread.Id, order: ListSortOrder.Ascending))
-                //    {
-                //        if (m.Role != MessageRole.Agent)
-                //        {
-                //            continue;
-                //        }
-
-                //        lastAssistantMessage = m;
-                //    }
-
-                //    if (lastAssistantMessage == null)
-                //    {
-                //        return "no response";
-                //    }
-
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:customerMessage:" + customerMessage);
+                ResponseResult response = responseClient.CreateResponse(customerMessage);
+                // Example – adjust to your actual API surface:
+                string resultText = response.GetOutputText()
+                                  ?? response.ToString(); // fallback if no OutputText
+                _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:response:" + resultText);
+                return string.IsNullOrWhiteSpace(resultText) ? "no response" : resultText;
                 //    // Combine all text parts from the last assistant message
                 //    var sb = new StringBuilder();
 
@@ -404,13 +283,13 @@ namespace viewer.Controllers
         {
             // Prefer service principal if all three vars are present
 
-            if (!string.IsNullOrWhiteSpace(_tenantId) &&
-                !string.IsNullOrWhiteSpace(_clientId) &&
-                !string.IsNullOrWhiteSpace(_secret))
-            {
-                return new ClientSecretCredential(_tenantId, _clientId, _secret);
-            }
-
+            //if (!string.IsNullOrWhiteSpace(_tenantId) &&
+            //    !string.IsNullOrWhiteSpace(_clientId) &&
+            //    !string.IsNullOrWhiteSpace(_secret))
+            //{
+            //    return new ClientSecretCredential(_tenantId, _clientId, _secret);
+            //}
+            return new ManagedIdentityCredential();
             // Otherwise, use dev chain and ignore partial/bad env creds
             return new DefaultAzureCredential(new DefaultAzureCredentialOptions
             {
