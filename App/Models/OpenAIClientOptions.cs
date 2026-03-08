@@ -9,5 +9,7 @@ namespace CpmDemoApp.Models
         public string DeploymentName { get; set; }
 
         public string AgentId { get; set; }
+
+        public string AgentVersion { get; set; }
     }
 }

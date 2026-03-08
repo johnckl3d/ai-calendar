@@ -7,10 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.AI.Projects.OpenAI" Version="2.0.0-beta.1" />
     <PackageReference Include="Microsoft.AspNetCore.AzureAppServices.HostingStartup" Version="6.0.0" />
     <PackageReference Include="Azure.AI.Agents.Persistent" Version="1.1.0" />
-    <PackageReference Include="Azure.AI.OpenAI" Version="2.0.0" />
-    <PackageReference Include="Azure.AI.Projects" Version="1.1.0" />
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.8.0-beta.1" />
+    <PackageReference Include="Azure.AI.Projects" Version="2.0.0-beta.1" />
     <PackageReference Include="Azure.Communication.Messages" Version="1.0.0" />
     <PackageReference Include="Azure.Identity" Version="1.17.1" />
     <PackageReference Include="Azure.Messaging.EventGrid" Version="4.24.0" />

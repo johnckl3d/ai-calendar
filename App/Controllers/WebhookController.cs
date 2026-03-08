@@ -1,6 +1,7 @@
 ﻿using Azure;
 using Azure.AI.Agents.Persistent;
-using Azure.AI.OpenAI;
+using Azure.AI.Projects;
+using Azure.AI.Projects.OpenAI;
 using Azure.Communication.Messages;
 using Azure.Core;
 using Azure.Identity;
@@ -10,10 +11,15 @@ using CpmDemoApp.Models;
 using Microsoft.ApplicationInsights;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using OpenAI;
 using OpenAI.Chat;
+using OpenAI.Responses;
+
+
+
+//using OpenAI.Responses;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
 
 // using Azure.AI.Projects;
 // using OpenAI;
@@ -33,15 +39,18 @@ namespace viewer.Controllers
         private static bool _clientsInitialized;
         private static NotificationMessagesClient _notificationMessagesClient;
         private static Guid _channelRegistrationId;
+
         private static PersistentAgentsClient _persistentAgentsClient;
         private static string _deploymentName;
         private static string _endpointURL;
         private static string _agentId;
+        private static string _agentVersion;
         private static string _tenantId;
         private static string _clientId;
         private static string _secret;
         private static PersistentAgentThread _thread;
-        private static PersistentAgent _agent;
+        private static AIProjectClient _projectClient;
+        private static ProjectOpenAIClient _openAiClient;
         private readonly TelemetryClient _telemetryClient;
 
 
@@ -78,6 +87,9 @@ namespace viewer.Controllers
                 _secret = TenantOptions.Value.Secret;
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::ConnectionString::" + notificationOptions.Value.ConnectionString);
                 _notificationMessagesClient = new NotificationMessagesClient(notificationOptions.Value.ConnectionString);
+
+                
+
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_deploymentName::" + _deploymentName);
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_endpointURL::" + _endpointURL);
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_agentId::" + _agentId);
@@ -88,14 +100,10 @@ namespace viewer.Controllers
                 {
                     TokenCredential credential = BuildCredential();
 
-                    // Create the agent client
-                    _persistentAgentsClient = new PersistentAgentsClient(_endpointURL, credential);
-                    _agent = _persistentAgentsClient.Administration.GetAgent(_agentId);
-                 
-
-
-                    _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_persistentAgentsClient created");
-                    _thread = _persistentAgentsClient.Threads.CreateThread();
+                    _projectClient = new AIProjectClient(
+                        endpoint: new Uri(_endpointURL),
+                        tokenProvider: credential);
+                    _openAiClient = _projectClient.OpenAI;
 
                     _clientsInitialized = true;
                 }
@@ -176,7 +184,7 @@ namespace viewer.Controllers
                         Text = $"Customer({messageData.From}): \"{messageData.Content}\""
                     });
                     _telemetryClient.TrackTrace("CalendarApp:WebhookController:HandleGridEvents:messageData.Content::" + messageData.Content);
-                    Messages.OpenAIConversationHistory.Add(new UserChatMessage(messageData.Content));
+                    //Messages.OpenAIConversationHistory.Add(new UserChatMessage(messageData.Content));
                     await RespondToCustomerAsync(messageData.From);
                 }
             }
@@ -203,7 +211,7 @@ namespace viewer.Controllers
 
                 await SendWhatsAppMessageAsync(numberToRespondTo, assistantResponseText);
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController:RespondToCustomerAsync:assistantResponseText::after SendWhatsAppMessageAsync");
-                Messages.OpenAIConversationHistory.Add(new AssistantChatMessage(assistantResponseText));
+                //Messages.OpenAIConversationHistory.Add(new AssistantChatMessage(assistantResponseText));
                 Messages.MessagesListStatic.Add(new Message
                 {
                     Text = $"Assistant: {assistantResponseText}"
@@ -232,6 +240,18 @@ namespace viewer.Controllers
             {
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync");
 
+                //// Create an empty conversation (or set options if you need to)
+                //var createResult = _openAiClient.Conversations.CreateProjectConversation();
+                //_telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::createResult::");
+                ////ProjectConversation conversation = createResult;
+                //_telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::conversation::");
+                //string conversationId = conversation.Id;
+                //_telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::conversation::" + conversationId);
+
+                //string model = _deploymentName;
+
+                //ProjectResponsesClient responseClient = _projectClient.OpenAI.GetProjectResponsesClientForModel(_deploymentName);
+
                 var chatMessages = new List<ChatMessage> { new SystemChatMessage(SystemPrompt) };
                 chatMessages.AddRange(Messages.OpenAIConversationHistory);
                 string chatMessagesJson = JsonSerializer.Serialize(chatMessages);
@@ -247,69 +267,117 @@ namespace viewer.Controllers
                 }
 
                 string input = lastUserMessage.Content[0].Text;
-                _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:lastUserMessage::" + input);
 
-                // Send message to the thread
-                PersistentThreadMessage messageResponse = _persistentAgentsClient.Messages.CreateMessage(
-                    _thread.Id,
-                    MessageRole.User,
-                    input);
+                AIProjectClient projectClient = new(endpoint: new Uri(_endpointURL), tokenProvider: new DefaultAzureCredential());
+                ProjectConversation conversation = projectClient.OpenAI.Conversations.CreateProjectConversation();
+                AgentReference agentReference = new AgentReference(name: _agentId, version: _agentVersion);
+                ProjectResponsesClient responseClient = projectClient.OpenAI.GetProjectResponsesClientForAgent(agentReference, conversation.Id);
 
-                // Start a run
-                ThreadRun run = _persistentAgentsClient.Runs.CreateRun(
-                    _thread.Id,
-                    _agent.Id);
+                ResponseResult response = responseClient.CreateResponse(input);
 
-                // Wait for completion
-                do
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(500));
-                    run = _persistentAgentsClient.Runs.GetRun(_thread.Id, run.Id);
-                }
-                while (run.Status == RunStatus.Queued
-                    || run.Status == RunStatus.InProgress);
 
-                if (run.Status != RunStatus.Completed)
-                {
-                    throw new InvalidOperationException($"Run failed or was canceled: {run.LastError?.Message}");
-                }
+               
 
-                // Read all messages in ascending order and take the LAST assistant message
-                PersistentThreadMessage? lastAssistantMessage = null;
+                //await foreach (StreamingResponseUpdate streamResponse in responseClient.CreateResponseStreamingAsync(input))
+                //{
+                //    if (streamResponse is StreamingResponseCreatedUpdate createUpdate)
+                //    {
+                //        _telemetryClient.TrackTrace($"Stream response created with ID: {createUpdate.Response.Id}");
+                //    }
+                //    else if (streamResponse is StreamingResponseOutputTextDeltaUpdate textDelta)
+                //    {
+                //        _telemetryClient.TrackTrace($"Delta: {textDelta.Delta}");
+                //    }
+                //    else if (streamResponse is StreamingResponseOutputTextDoneUpdate textDoneUpdate)
+                //    {
+                //        _telemetryClient.TrackTrace($"Response done with full message: {textDoneUpdate.Text}");
+                //        return string.IsNullOrEmpty(textDoneUpdate.Text) ? "no response" : textDoneUpdate.Text;
+                //    }
+                //    else if (streamResponse is StreamingResponseErrorUpdate errorUpdate)
+                //    {
+                //        _telemetryClient.TrackTrace($"The stream has failed with the error: {errorUpdate.Message}");
+                //    }
+                //}
+                //_openAiClient.Conversations.DeleteConversation(conversationId);
 
-                foreach (var m in _persistentAgentsClient.Messages.GetMessages(_thread.Id, order: ListSortOrder.Ascending))
-                {
-                    if (m.Role != MessageRole.Agent)
-                    {
-                        continue;
-                    }
+                //    var chatMessages = new List<ChatMessage> { new SystemChatMessage(SystemPrompt) };
+                //    chatMessages.AddRange(Messages.OpenAIConversationHistory);
+                //    string chatMessagesJson = JsonSerializer.Serialize(chatMessages);
+                //    _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:chatMessages::" + chatMessagesJson);
 
-                    lastAssistantMessage = m;
-                }
+                //    var lastUserMessage = Messages.OpenAIConversationHistory
+                //        .LastOrDefault(m => m is UserChatMessage) as UserChatMessage;
 
-                if (lastAssistantMessage == null)
-                {
-                    return "no response";
-                }
+                //    if (lastUserMessage == null || lastUserMessage.Content.Count == 0)
+                //    {
+                //        _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:No user message found");
+                //        return "I did not receive any question to answer.";
+                //    }
 
-                // Combine all text parts from the last assistant message
-                var sb = new StringBuilder();
+                //    string input = lastUserMessage.Content[0].Text;
+                //    _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:lastUserMessage::" + input);
 
-                foreach (var part in lastAssistantMessage.ContentItems)
-                {
-                    if (part is MessageTextContent t)
-                    {
-                        sb.AppendLine(t.Text);
-                    }
-                    else
-                    {
-                        sb.AppendLine(part.ToString());
-                    }
-                }
+                //    // Send message to the thread
+                //    PersistentThreadMessage messageResponse = _persistentAgentsClient.Messages.CreateMessage(
+                //        _thread.Id,
+                //        MessageRole.User,
+                //        input);
 
-                var result = sb.ToString().Trim();
-                _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:finalResponse::" + result);
-                return string.IsNullOrEmpty(result) ? "no response" : result;
+                //    // Start a run
+                //    ThreadRun run = _persistentAgentsClient.Runs.CreateRun(
+                //        _thread.Id,
+                //        _agent.Id);
+
+                //    // Wait for completion
+                //    do
+                //    {
+                //        await Task.Delay(TimeSpan.FromMilliseconds(500));
+                //        run = _persistentAgentsClient.Runs.GetRun(_thread.Id, run.Id);
+                //    }
+                //    while (run.Status == RunStatus.Queued
+                //        || run.Status == RunStatus.InProgress);
+
+                //    if (run.Status != RunStatus.Completed)
+                //    {
+                //        throw new InvalidOperationException($"Run failed or was canceled: {run.LastError?.Message}");
+                //    }
+
+                //    // Read all messages in ascending order and take the LAST assistant message
+                //    PersistentThreadMessage? lastAssistantMessage = null;
+
+                //    foreach (var m in _persistentAgentsClient.Messages.GetMessages(_thread.Id, order: ListSortOrder.Ascending))
+                //    {
+                //        if (m.Role != MessageRole.Agent)
+                //        {
+                //            continue;
+                //        }
+
+                //        lastAssistantMessage = m;
+                //    }
+
+                //    if (lastAssistantMessage == null)
+                //    {
+                //        return "no response";
+                //    }
+
+                //    // Combine all text parts from the last assistant message
+                //    var sb = new StringBuilder();
+
+                //    foreach (var part in lastAssistantMessage.ContentItems)
+                //    {
+                //        if (part is MessageTextContent t)
+                //        {
+                //            sb.AppendLine(t.Text);
+                //        }
+                //        else
+                //        {
+                //            sb.AppendLine(part.ToString());
+                //        }
+                //    }
+
+                //    var result = sb.ToString().Trim();
+                //    _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:finalResponse::" + result);
+                //    return string.IsNullOrEmpty(result) ? "no response" : result;
             }
             catch (Exception ex)
             {
@@ -320,6 +388,7 @@ namespace viewer.Controllers
                 });
                 throw;
             }
+            return null;
         }
 
 
