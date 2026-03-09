@@ -38,6 +38,8 @@ namespace viewer.Controllers
         private static string _key;
         private static PersistentAgentThread _thread;
         private static AIProjectClient _projectClient;
+        private static ProjectConversation _conversation;
+        private static AgentReference _agentReference;
         private readonly TelemetryClient _telemetryClient;
 
 
@@ -77,7 +79,7 @@ namespace viewer.Controllers
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::ConnectionString::" + notificationOptions.Value.ConnectionString);
                 _notificationMessagesClient = new NotificationMessagesClient(notificationOptions.Value.ConnectionString);
 
-                
+              
 
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_deploymentName::" + _deploymentName);
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController::Init::_endpointURL::" + _endpointURL);
@@ -89,9 +91,9 @@ namespace viewer.Controllers
                 {
                     TokenCredential credential = BuildCredential();
 
-                    _projectClient = new AIProjectClient(
-                        endpoint: new Uri(_endpointURL),
-                        tokenProvider: credential);
+                    _projectClient = new(endpoint: new Uri(_endpointURL), tokenProvider: credential);
+                    _conversation = _projectClient.OpenAI.Conversations.CreateProjectConversation();
+                    _agentReference = new AgentReference(name: _agentId, version: _agentVersion);
 
                     _clientsInitialized = true;
                 }
@@ -227,11 +229,8 @@ namespace viewer.Controllers
             try
             {
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync");
-                TokenCredential credential = BuildCredential();
-                AIProjectClient projectClient = new(endpoint: new Uri(_endpointURL), tokenProvider: credential);
-                ProjectConversation conversation = projectClient.OpenAI.Conversations.CreateProjectConversation();
-                AgentReference agentReference = new AgentReference(name: _agentId, version: _agentVersion);
-                ProjectResponsesClient responseClient = projectClient.OpenAI.GetProjectResponsesClientForAgent(agentReference, conversation.Id);
+             
+                ProjectResponsesClient responseClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(_agentReference, _conversation.Id);
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:customerMessage:" + customerMessage);
                 ResponseResult response = responseClient.CreateResponse(customerMessage);
                 // Example – adjust to your actual API surface:
