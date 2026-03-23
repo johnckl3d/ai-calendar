@@ -233,11 +233,37 @@ namespace viewer.Controllers
                 ProjectResponsesClient responseClient = _projectClient.OpenAI.GetProjectResponsesClientForAgent(_agentReference, _conversation.Id);
                 _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:customerMessage:" + customerMessage);
                 ResponseResult response = responseClient.CreateResponse(customerMessage);
+
                 // Example – adjust to your actual API surface:
-                string resultText = response.GetOutputText()
-                                  ?? response.ToString(); // fallback if no OutputText
-                _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:response:" + resultText);
-                return string.IsNullOrWhiteSpace(resultText) ? "no response" : resultText;
+                //string resultText = response.GetOutputText()
+                //                  ?? response.ToString(); // fallback if no OutputText
+                //_telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:response:" + resultText);
+
+                //response.GetOutputText()
+
+                // Aggregate all output items into a single string, preserving multi-message structure
+                var textSegments = new List<string>();
+
+                if (response.OutputItems is not null)
+                {
+                    IEnumerable<string> enumerable = (from item in response.OutputItems
+                                                      where item is MessageResponseItem
+                                                      select item as MessageResponseItem).SelectMany((MessageResponseItem message) => from contentPart in message.Content
+                                                                                                                                      where contentPart.Kind == ResponseContentPartKind.OutputText
+                                                                                                                                      select contentPart into outputTextPart
+                                                                                                                                      select outputTextPart.Text);
+                    if (!enumerable.Any())
+                        if (!enumerable.Any())
+                    {
+                        return "no response";
+                    }
+                    // Create a single string with a new line per item
+                    string resultText = string.Join(Environment.NewLine, enumerable);
+
+                    _telemetryClient.TrackTrace("CalendarApp:WebhookController:GenerateAIResponseAsync:response:" + resultText);
+
+                    return string.IsNullOrWhiteSpace(resultText) ? "no response" : resultText;
+                }
                 //    // Combine all text parts from the last assistant message
                 //    var sb = new StringBuilder();
 
